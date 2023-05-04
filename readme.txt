@@ -1,4 +1,4 @@
-���͈ȉ�
+環境は以下
 
 # Name                    Version                   Build  Channel
 blas                      1.0                         mkl
