@@ -34,8 +34,8 @@ train, val, test = torch.utils.data.random_split(dataset, [n_train, n_val, n_tes
 
 model_checkpoint = pl.callbacks.ModelCheckpoint(
     "logs/",
-    filename="{epoch}-{train_loss_epoch:.4f}",
-    monitor="train_loss_epoch",
+    filename="{epoch}-{val_loss_epoch:.4f}",
+    monitor="val_loss_epoch",
     mode="min",
     save_top_k=1,
     save_last=False,
@@ -58,6 +58,7 @@ net = Net()
 net.setData(train, val, test)
 
 trainer = Trainer(
+    max_epochs=10000,
     callbacks=[model_checkpoint, early_stopping],
 )
 

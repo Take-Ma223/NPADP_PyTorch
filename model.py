@@ -38,11 +38,19 @@ class ValidationNet(pl.LightningModule):
         y = self.forward(x)
         loss = self.lossfun(y, t)
         results = {'val_loss': loss}
+        self.log("val_loss",loss,
+                 prog_bar=True,  # プログレスバーに表示するか？
+                 logger=True,  # 結果を保存するのか？
+                 on_epoch=True,  # １epoch中の結果を累積した値を利用するのか？
+                 on_step=True,  # １stepの結果を利用するのか？
+        )
+        print(results)
         return results
 
     def validation_end(self, outputs):
         avg_loss = torch.stack([x['val_loss'] for x in outputs]).mean()
         results = {'val_loss': avg_loss}
+        print(results)
         return results
 
 
@@ -57,18 +65,20 @@ class TestNet(pl.LightningModule):
         y = self.forward(x)
         loss = self.lossfun(y, t)
         results = {'test_loss': loss}
+        print(results)
         return results
 
     def test_end(self, outputs):
         avg_loss = torch.stack([x['test_loss'] for x in outputs]).mean()
         results = {'test_loss': avg_loss}
+        print(results)
         return results
 
 
 # 学習データ、検証データ、テストデータへの処理を継承したクラス
 class Net(TrainNet, ValidationNet, TestNet):
 
-    def __init__(self, input_size=24, hidden1_size=20, hidden2_size=16, hidden3_size=8, output_size=1, batch_size=100):
+    def __init__(self, input_size=24, hidden1_size=20, hidden2_size=16, hidden3_size=8, output_size=1, batch_size=24):
         super(Net, self).__init__()
         self.train_data = None
         self.val_data = None
@@ -95,7 +105,7 @@ class Net(TrainNet, ValidationNet, TestNet):
         return F.mse_loss(y, t)
 
     def configure_optimizers(self):
-        return torch.optim.SGD(self.parameters(), lr=0.00001)
+        return torch.optim.SGD(self.parameters(), lr=0.00001, weight_decay=3,momentum=0.6)
 
     def setData(self,train_data, val_data, test_data):
         self.train_data = train_data
