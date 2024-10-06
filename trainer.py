@@ -58,7 +58,7 @@ net = Net()
 net.setData(train, val, test)
 
 trainer = Trainer(
-    max_epochs=10000,
+    max_epochs=1000,
     callbacks=[model_checkpoint, early_stopping],
 )
 

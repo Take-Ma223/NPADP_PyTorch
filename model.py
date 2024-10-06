@@ -78,7 +78,7 @@ class TestNet(pl.LightningModule):
 # 学習データ、検証データ、テストデータへの処理を継承したクラス
 class Net(TrainNet, ValidationNet, TestNet):
 
-    def __init__(self, input_size=24, hidden1_size=20, hidden2_size=16, hidden3_size=8, output_size=1, batch_size=24):
+    def __init__(self, input_size=24, hidden1_size=20, hidden2_size=16, hidden3_size=8, output_size=1, batch_size=4):
         super(Net, self).__init__()
         self.train_data = None
         self.val_data = None
