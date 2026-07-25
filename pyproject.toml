@@ -1,0 +1,15 @@
+[project]
+name = "npadp-pytorch-model"
+version = "0.1.0"
+description = "nature prhysm 譜面難易度予測ネットワーク（NPADP）の学習・推論"
+requires-python = ">=3.12"
+dependencies = [
+    "torch>=2.4",
+    "lightning>=2.4",
+    "pandas>=2.2",
+    "numpy>=1.26",
+]
+
+[tool.uv]
+# 難易度予測は 24 特徴量の極小 MLP のため CPU 版 torch で十分（学習データも数百行）。
+# CUDA 版が必要になったら tool.uv.sources で pytorch の cu 系 index を指定する。

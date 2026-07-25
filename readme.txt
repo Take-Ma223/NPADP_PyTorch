@@ -1,50 +1,33 @@
-環境は以下
+nature prhysm 譜面難易度予測ネットワーク（NPADP）PyTorch 実装
 
-# Name                    Version                   Build  Channel
-blas                      1.0                         mkl
-bottleneck                1.3.5           py310h9128911_0
-bzip2                     1.0.8                he774522_0
-ca-certificates           2023.01.10           haa95532_0
-cffi                      1.15.1          py310h2bbff1b_3
-colorama                  0.4.6           py310haa95532_0
-fsspec                    2023.3.0        py310haa95532_0
-future                    0.18.3          py310haa95532_0
-intel-openmp              2021.4.0          haa95532_3556
-libffi                    3.4.2                hd77b12b_6
-libuv                     1.44.2               h2bbff1b_0
-lightning-utilities       0.7.1           py310haa95532_0
-mkl                       2021.4.0           haa95532_640
-mkl-service               2.4.0           py310h2bbff1b_0
-mkl_fft                   1.3.1           py310ha0764ea_0
-mkl_random                1.2.2           py310h4ed8f06_0
-ninja                     1.10.2               haa95532_5
-ninja-base                1.10.2               h6d14046_5
-numexpr                   2.8.4           py310hd213c9f_0
-numpy                     1.23.5          py310h60c9a35_0
-numpy-base                1.23.5          py310h04254f7_0
-openssl                   1.1.1t               h2bbff1b_0
-packaging                 23.0            py310haa95532_0
-pandas                    1.5.3           py310h4ed8f06_0
-pip                       23.0.1          py310haa95532_0
-pycparser                 2.21               pyhd3eb1b0_0
-python                    3.10.11              h966fe2a_2
-python-dateutil           2.8.2              pyhd3eb1b0_0
-pytorch                   1.12.1          cpu_py310h5e1f01c_1
-pytorch-lightning         1.9.3           py310haa95532_0
-pytz                      2022.7          py310haa95532_0
-pyyaml                    6.0             py310h2bbff1b_1
-setuptools                66.0.0          py310haa95532_0
-six                       1.16.0             pyhd3eb1b0_1
-sqlite                    3.41.2               h2bbff1b_0
-tk                        8.6.12               h2bbff1b_0
-torchmetrics              0.11.2          py310h9909e9c_0
-tqdm                      4.65.0          py310h9909e9c_0
-typing-extensions         4.5.0           py310haa95532_0
-typing_extensions         4.5.0           py310haa95532_0
-tzdata                    2023c                h04d1e81_0
-vc                        14.2                 h21ff451_1
-vs2015_runtime            14.27.29016          h5e58377_2
-wheel                     0.38.4          py310haa95532_0
-xz                        5.2.10               h8cc25b3_1
-yaml                      0.2.5                he774522_0
-zlib                      1.2.13               h8cc25b3_0
+## 環境（2026-07-25 に uv へ移行・旧 Anaconda 環境は廃止）
+
+依存は pyproject.toml で管理。Python 3.12（.python-version で固定）+ torch CPU 版 + Lightning。
+
+初回セットアップ:
+  1. uv をインストール（winget install astral-sh.uv）
+  2. このフォルダで: uv sync
+
+学習:
+  uv run python trainer.py
+  → data.csv（24特徴量+y）を 6:2:2 に分割して最大 1000 epoch 学習。
+    ベストは logs/ に epoch=NN-val_loss_epoch=X.ckpt として保存される。
+  ※ シード固定（manual_seed(0)）のため同一データなら再現する
+    （環境移行検証: torch1.12/PL1.9/Py3.10 → torch2.13/L2.6/Py3.12 で
+     ベスト epoch・val_loss が完全一致することを確認済み）
+
+推論と C++ 用モデル出力:
+  uv run python pred.py
+  → weight.ckpt を読み pred.csv の 1 行を推論。TorchScript を model.pt へ保存
+    （model.pt は C++ 実装 NPADP_pred が読み込む）
+
+## 既知の将来課題
+
+- Lightning の to_torchscript は v2.8 で削除予定（PyTorch 自体が TorchScript を
+  非推奨化し torch.export へ移行中）。C++ 側（NPADP_pred / libtorch）の読み込み
+  方式とセットで、いずれ torch.export ベースへの移行が必要。
+
+## 旧環境の記録（参考）
+
+旧 Anaconda 環境（NPADP・Python 3.10 / pytorch 1.12.1 cpu / pytorch-lightning 1.9.3）
+のパッケージ一覧は git 履歴のこのファイル参照。

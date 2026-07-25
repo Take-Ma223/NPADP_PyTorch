@@ -4,8 +4,8 @@ import torch
 import torch.utils.data
 import torch.nn as nn
 import torch.nn.functional as F
-import pytorch_lightning as pl
-from pytorch_lightning import Trainer
+import lightning.pytorch as pl
+from lightning.pytorch import Trainer
 from model import Net
 
 # データの読み込み(df: DataFrame)

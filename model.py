@@ -4,7 +4,7 @@ import torch
 import torch.utils.data
 import torch.nn as nn
 import torch.nn.functional as F
-import pytorch_lightning as pl
+import lightning.pytorch as pl
 
 
 # 学習データに対する処理
