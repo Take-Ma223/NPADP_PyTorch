@@ -1,113 +1,40 @@
-import numpy as np
-import pandas as pd
 import torch
-import torch.utils.data
 import torch.nn as nn
 import torch.nn.functional as F
-import lightning.pytorch as pl
 
 
-# 学習データに対する処理
-class TrainNet(pl.LightningModule):
+class Net(nn.Module):
+    """譜面難易度予測ネットワーク（全結合 入力→20→16→8→1・ReLU）。
 
-    def train_dataloader(self):
-        return torch.utils.data.DataLoader(self.train_data, self.batch_size, shuffle=True)
+    入力の標準化（学習用の行の平均 0・標準偏差 1）をモデルの中に持つ。
+    ゲーム側（NPADP_pred）はレーダーの生の整数をそのまま送ってくるので、標準化は forward の先頭で行い、
+    TorchScript にも一緒に書き出される。
+    """
 
-    def training_step(self, batch, batch_nb):
-        x, t = batch
-        y = self.forward(x)
-        loss = self.lossfun(y, t)
-        results = {'loss': loss}
-        self.log("train_loss",loss,
-                 prog_bar=True,  # プログレスバーに表示するか？
-                 logger=True,  # 結果を保存するのか？
-                 on_epoch=True,  # １epoch中の結果を累積した値を利用するのか？
-                 on_step=True,  # １stepの結果を利用するのか？
-        )
-        return results
-
-
-# 検証データに対する処理
-class ValidationNet(pl.LightningModule):
-
-    def val_dataloader(self):
-        return torch.utils.data.DataLoader(self.val_data, self.batch_size)
-
-    def validation_step(self, batch, batch_nb):
-        x, t = batch
-        y = self.forward(x)
-        loss = self.lossfun(y, t)
-        results = {'val_loss': loss}
-        self.log("val_loss",loss,
-                 prog_bar=True,  # プログレスバーに表示するか？
-                 logger=True,  # 結果を保存するのか？
-                 on_epoch=True,  # １epoch中の結果を累積した値を利用するのか？
-                 on_step=True,  # １stepの結果を利用するのか？
-        )
-        print(results)
-        return results
-
-    def validation_end(self, outputs):
-        avg_loss = torch.stack([x['val_loss'] for x in outputs]).mean()
-        results = {'val_loss': avg_loss}
-        print(results)
-        return results
-
-
-# テストデータに対する処理
-class TestNet(pl.LightningModule):
-
-    def test_dataloader(self):
-        return torch.utils.data.DataLoader(self.test_data, self.batch_size)
-
-    def test_step(self, batch, batch_nb):
-        x, t = batch
-        y = self.forward(x)
-        loss = self.lossfun(y, t)
-        results = {'test_loss': loss}
-        print(results)
-        return results
-
-    def test_end(self, outputs):
-        avg_loss = torch.stack([x['test_loss'] for x in outputs]).mean()
-        results = {'test_loss': avg_loss}
-        print(results)
-        return results
-
-
-# 学習データ、検証データ、テストデータへの処理を継承したクラス
-class Net(TrainNet, ValidationNet, TestNet):
-
-    def __init__(self, input_size=24, hidden1_size=20, hidden2_size=16, hidden3_size=8, output_size=1, batch_size=4):
-        super(Net, self).__init__()
-        self.train_data = None
-        self.val_data = None
-        self.test_data = None
+    def __init__(self, input_size=24, hidden1_size=20, hidden2_size=16, hidden3_size=8, output_size=1):
+        super().__init__()
+        self.register_buffer("in_mean", torch.zeros(input_size))
+        self.register_buffer("in_std", torch.ones(input_size))
         self.fc1 = nn.Linear(input_size, hidden1_size)
         self.fc2 = nn.Linear(hidden1_size, hidden2_size)
         self.fc3 = nn.Linear(hidden2_size, hidden3_size)
         self.fc4 = nn.Linear(hidden3_size, output_size)
-        self.batch_size = batch_size
+
+    @property
+    def input_size(self) -> int:
+        return self.fc1.in_features
+
+    def set_standardization(self, x: torch.Tensor):
+        """学習用の行 x（行数 × 入力数）から平均と標準偏差を決める。全行同じ値の列は標準偏差 1 にして割り算を避ける。"""
+        mean = x.mean(dim=0)
+        std = x.std(dim=0, unbiased=False)
+        std = torch.where(std > 0, std, torch.ones_like(std))
+        self.in_mean.copy_(mean)
+        self.in_std.copy_(std)
 
     def forward(self, x):
-        x = self.fc1(x)
-        x = F.relu(x)
-        x = self.fc2(x)
-        x = F.relu(x)
-        x = self.fc3(x)
-        x = F.relu(x)
-        x = self.fc4(x)
-        return x
-
-    # New: 平均ニ乗誤差
-    def lossfun(self, y, t):
-        t = t.unsqueeze(1)
-        return F.mse_loss(y, t)
-
-    def configure_optimizers(self):
-        return torch.optim.SGD(self.parameters(), lr=0.00001, weight_decay=3,momentum=0.6)
-
-    def setData(self,train_data, val_data, test_data):
-        self.train_data = train_data
-        self.val_data = val_data
-        self.test_data = test_data
+        x = (x - self.in_mean) / self.in_std
+        x = F.relu(self.fc1(x))
+        x = F.relu(self.fc2(x))
+        x = F.relu(self.fc3(x))
+        return self.fc4(x)

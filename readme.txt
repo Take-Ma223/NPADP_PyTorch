@@ -26,24 +26,31 @@ nature prhysm 譜面難易度予測ネットワーク（NPADP）PyTorch 実装
      列名 sc_/sr_/lc_/lr_ + 軸名）、data_index.csv（行 → 譜面）を書く。計測の作業場所は measure_work/。
    - ツールは .nps だけで動く（音源・ジャケット不要）。計測 CSV のパスに日本語を入れない
 
-学習:
-  uv run python trainer.py
-  → data.csv（24特徴量+y）を 6:2:2 に分割して最大 1000 epoch 学習。
-    ベストは logs/ に epoch=NN-val_loss_epoch=X.ckpt として保存される。
-  ※ シード固定（manual_seed(0)）のため同一データなら再現する
-    （環境移行検証: torch1.12/PL1.9/Py3.10 → torch2.13/L2.6/Py3.12 で
-     ベスト epoch・val_loss が完全一致することを確認済み）
+## 学習（2026-09-10 に手順を改めた。旧手順は git 履歴の trainer.py / model.py）
 
-推論と C++ 用モデル出力:
-  uv run python pred.py
-  → weight.ckpt を読み pred.csv の 1 行を推論。TorchScript を model.pt へ保存
-    （model.pt は C++ 実装 NPADP_pred が読み込む）
+  uv run python trainer.py --data data.csv data_4mode.csv --out retrain_YYYY-MM-DD --baseline model.pt.bak
+  → 1. 最終確認用に 2 割を先に取り分ける（ラベルの帯で層化・種固定）
+    2. 残り 8 割で 5 分割交差検証（Adam・バッチ 16・早期終了 patience 100・lr {1e-3,3e-4} × weight_decay {0,1e-4,1e-3}）
+    3. データ × 候補 から 1 組を選ぶ（平均 MAE 最小。差が分割ごとの標準偏差以内なら 24 入力 data.csv を採る）
+    4. 選んだ組を 8 割で 3 本学習（種 0,1,2）し、最終確認用 2 割で 1 回だけ測る。検証 MAE が中央の 1 本が採用候補
+    出力は --out の下（cv_results.csv / cv_summary.csv / final_results.csv / final_seed<N>.pt / summary.md）
+  - モデル（model.py）は全結合 入力→20→16→8→1・ReLU。入力の標準化（学習用の行の平均 0・標準偏差 1）を
+    モデルの中に持つので、ゲーム側はレーダーの生の整数をそのまま送ればよい
+  - 乱数の種は --seed（既定 0）で固定。同じデータ・同じ環境なら再現する
+  - Lightning は使わなくなった（pyproject.toml の依存には残っている）
+
+C++ 用モデル出力:
+  uv run python pred.py --weights retrain_YYYY-MM-DD/final_seed1.pt --out retrain_YYYY-MM-DD/model_candidate.pt --data data.csv
+  → TorchScript を書き出し、書き出し前後で出力が一致することを確かめる。
+    model.pt は C++ 実装 NPADP_pred（libtorch 2.0.0）が読み込む。torch 2.13 の torch.jit.script 出力を
+    libtorch 2.0.0 が読めることは 2026-09-10 に NPADP_pred.exe 単体で確認済み
+
+現行モデル（2024-10-27 学習・ゲームに配置中）: weight.ckpt（旧 Lightning 形式）= model.pt.bak（TorchScript）
 
 ## 既知の将来課題
 
-- Lightning の to_torchscript は v2.8 で削除予定（PyTorch 自体が TorchScript を
-  非推奨化し torch.export へ移行中）。C++ 側（NPADP_pred / libtorch）の読み込み
-  方式とセットで、いずれ torch.export ベースへの移行が必要。
+- PyTorch 自体が TorchScript を非推奨化し torch.export へ移行中。C++ 側（NPADP_pred / libtorch）の
+  読み込み方式とセットで、いずれ torch.export ベースへの移行が必要。
 
 ## 旧環境の記録（参考）
 
