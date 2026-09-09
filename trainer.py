@@ -1,6 +1,6 @@
-"""難易度予測モデルの学習（候補選びから採用候補の決定まで）。
+"""難易度予測モデルの学習。--mode で 2 つの手順を切り替える。
 
-手順:
+交差検証モード（--mode cv・既定）: 手順の良し悪しを比べて採用候補を決める
   1. 最終確認用に全体の 2 割を先に取り分ける（ラベルの帯で層化・種固定）。候補選びの間は一切使わない
   2. 残り 8 割で 5 分割交差検証（層化）。指標は MAE と MSE。分割ごとの値と平均・標準偏差を出す
   3. 入力（データファイル）× ハイパーパラメータ候補 のすべてを交差検証し、1 組を選ぶ:
@@ -9,17 +9,29 @@
   4. 選んだ 1 組を残り 8 割で学習（種を 3 つ変えて 3 本。早期終了のために 8 割の中から 1 割を検証用に取る）し、
      最終確認用 2 割で 1 回だけ測る。3 本のうち検証 MAE が中央のものを採用候補にする
 
+全データモード（--mode full）: 決まった手順で最終版のモデルを作る
+  全行を使い、--lr / --weight-decay の 1 組で種 0 / 1 / 2 の 3 本を学習する（最終確認用の取り分けはしない）。
+  早期終了のために種ごとに全体から 1 割を検証用に取る（層化・種ごとに違う分け方）。
+  3 本は pred.py で平均モデル（Ensemble）1 つの TorchScript に書き出す
+
 入力ファイルは行順が同じ前提（同じ譜面が同じ行）。分割はラベルと種だけで決まるので、どのファイルでも同じ行が同じ分割になる。
 
 使い方:
   uv run python trainer.py --data data.csv data_4mode.csv --out retrain_2026-09-10 --baseline model.pt.bak
+  uv run python trainer.py --mode full --data data.csv --out retrain_2026-09-10
 出力（--out の下）:
-  split.csv          行ごとの分割（holdout / fold）
-  cv_results.csv     交差検証の全結果（データ × 候補 × 分割）
-  cv_summary.csv     データ × 候補ごとの平均・標準偏差
-  final_results.csv  採用候補 3 本（検証 MAE・最終確認用 2 割の MAE/MSE）と現行モデル
-  final_seed<N>.pt   3 本の重み（state_dict）。pred.py で TorchScript にする
-  summary.md         人が読む要約
+  交差検証モード:
+    split.csv          行ごとの分割（holdout / fold）
+    cv_results.csv     交差検証の全結果（データ × 候補 × 分割）
+    cv_summary.csv     データ × 候補ごとの平均・標準偏差
+    final_results.csv  採用候補 3 本（検証 MAE・最終確認用 2 割の MAE/MSE）と現行モデル
+    final_seed<N>.pt   3 本の重み（state_dict）。pred.py で TorchScript にする
+    summary.md         人が読む要約
+  全データモード:
+    full_split.csv     行ごとの検証用の印（種ごと）
+    full_results.csv   3 本の検証 MAE / MSE・ベストエポック
+    full_seed<N>.pt    3 本の重み（state_dict）。pred.py で平均モデルにする
+    full_summary.md    人が読む要約
 """
 import argparse
 import json
@@ -132,17 +144,62 @@ def hp_name(hp):
     return f"lr={hp['lr']:g},wd={hp['weight_decay']:g}"
 
 
+def save_weights(path: Path, net: Net, cols, data_name: str, hp, seed: int, best_epoch: int):
+    """pred.py が読む形式で重みを保存する。"""
+    torch.save({"state_dict": net.state_dict(), "input_size": net.input_size, "columns": cols, "data": data_name,
+                "hp": hp, "seed": seed, "best_epoch": best_epoch}, path)
+
+
+def train_full(args, datasets, t0):
+    """全データモード: 全行で種 0 / 1 / 2 の 3 本を学習する。早期終了のため種ごとに 1 割を検証用に取る。"""
+    if len(datasets) != 1:
+        raise SystemExit("全データモードは --data を 1 つだけ指定する")
+    name, (x, y, cols) = next(iter(datasets.items()))
+    y_np = y.numpy()
+    hp = {"lr": args.lr, "weight_decay": args.weight_decay}
+    split = pd.DataFrame({"row": np.arange(1, len(y_np) + 1), "y": y_np.astype(int)})
+    results = []
+    for seed in FINAL_SEEDS:
+        val = stratified_split(y_np, INNER_VAL_RATIO, np.random.default_rng(1000 + seed))
+        split[f"val_seed{seed}"] = val.astype(int)
+        tr = np.flatnonzero(~val)
+        va = np.flatnonzero(val)
+        r = fit(x[tr], y[tr], x[va], y[va], hp, seed, x.shape[1])
+        save_weights(args.out / f"full_seed{seed}.pt", r["net"], cols, name, hp, seed, r["best_epoch"])
+        results.append({"model": f"full_seed{seed}", "data": name, "hp": hp_name(hp), "seed": seed, "train_rows": len(tr), "val_rows": len(va),
+                        "best_epoch": r["best_epoch"], "epochs_run": r["epochs_run"], "diverged": int(r["diverged"]),
+                        "val_mae": r["val_mae"], "val_mse": r["val_mse"]})
+        print(f"[full] seed{seed}: train={len(tr)} val={len(va)} val MAE={r['val_mae']:.3f} MSE={r['val_mse']:.2f} "
+              f"best_epoch={r['best_epoch']} run={r['epochs_run']} diverged={r['diverged']}  ({time.time() - t0:.0f}s)", flush=True)
+    split.to_csv(args.out / "full_split.csv", index=False, lineterminator="\n")
+    pd.DataFrame(results).to_csv(args.out / "full_results.csv", index=False, lineterminator="\n")
+    with (args.out / "full_summary.md").open("w", encoding="utf-8", newline="\n") as f:
+        f.write(f"# 全データモードの学習結果（{name}・{hp_name(hp)}・バッチ {BATCH_SIZE}・最大 {MAX_EPOCHS} エポック・早期終了 patience {PATIENCE}）\n\n")
+        f.write(f"行数 {len(y_np)}・検証用は種ごとに {INNER_VAL_RATIO:.0%}（層化）\n\n")
+        f.write("| モデル | 学習行 | 検証行 | 検証 MAE | 検証 MSE | ベストエポック | 発散 |\n|---|---|---|---|---|---|---|\n")
+        for r in results:
+            f.write(f"| {r['model']} | {r['train_rows']} | {r['val_rows']} | {r['val_mae']:.3f} | {r['val_mse']:.1f} | {r['best_epoch']} | {r['diverged']} |\n")
+        f.write(f"\n所要 {time.time() - t0:.0f} 秒\n")
+    print(f"[done] full_seed0..{FINAL_SEEDS[-1]}.pt  ({time.time() - t0:.0f}s)")
+
+
 def main():
     ap = argparse.ArgumentParser()
+    ap.add_argument("--mode", choices=("cv", "full"), default="cv", help="cv: 交差検証で候補選び（既定） / full: 全データで 3 本学習")
     ap.add_argument("--data", nargs="+", type=Path, default=[Path("data.csv")])
     ap.add_argument("--out", type=Path, required=True)
     ap.add_argument("--seed", type=int, default=0, help="分割と候補選びの学習に使う種（最終学習の種は 0,1,2）")
     ap.add_argument("--baseline", type=Path, default=None, help="比較に出す現行モデル（TorchScript）。data.csv があるときだけ使う")
+    ap.add_argument("--lr", type=float, default=3e-4, help="全データモードの学習率（既定は 2026-09-10 の交差検証で選んだ値）")
+    ap.add_argument("--weight-decay", type=float, default=1e-4, help="全データモードの重み減衰（既定は 2026-09-10 の交差検証で選んだ値）")
     args = ap.parse_args()
     args.out.mkdir(parents=True, exist_ok=True)
     t0 = time.time()
 
     datasets = {p.name: load_data(p) for p in args.data}
+    if args.mode == "full":
+        train_full(args, datasets, t0)
+        return
     ys = [y for _, y, _ in datasets.values()]
     for y in ys[1:]:
         if not torch.equal(y, ys[0]):
@@ -210,8 +267,7 @@ def main():
             p = r["net"](x[ho]).squeeze(1)
         ho_mae = (p - y[ho]).abs().mean().item()
         ho_mse = F.mse_loss(p, y[ho]).item()
-        torch.save({"state_dict": r["net"].state_dict(), "input_size": x.shape[1], "columns": cols, "data": chosen["data"],
-                    "hp": chosen_hp, "seed": seed, "best_epoch": r["best_epoch"]}, args.out / f"final_seed{seed}.pt")
+        save_weights(args.out / f"final_seed{seed}.pt", r["net"], cols, chosen["data"], chosen_hp, seed, r["best_epoch"])
         finals.append({"model": f"final_seed{seed}", "data": chosen["data"], "hp": chosen["hp"], "seed": seed,
                        "train_rows": len(tr), "inner_val_rows": len(va), "best_epoch": r["best_epoch"], "diverged": int(r["diverged"]),
                        "inner_val_mae": r["val_mae"], "inner_val_mse": r["val_mse"], "holdout_mae": ho_mae, "holdout_mse": ho_mse})

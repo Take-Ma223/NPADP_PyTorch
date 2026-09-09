@@ -38,3 +38,20 @@ class Net(nn.Module):
         x = F.relu(self.fc2(x))
         x = F.relu(self.fc3(x))
         return self.fc4(x)
+
+
+class Ensemble(nn.Module):
+    """種を変えて学習した複数の Net の出力を平均する最終モデル。
+
+    標準化は各 Net の中にあるので、入力はレーダーの生の整数のまま。Net 1 本と同じ形（行数 × 1）を返す。
+    """
+
+    def __init__(self, nets):
+        super().__init__()
+        self.nets = nn.ModuleList(nets)
+
+    def forward(self, x):
+        outputs = []
+        for net in self.nets:
+            outputs.append(net(x))
+        return torch.stack(outputs, dim=0).mean(dim=0)
