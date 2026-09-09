@@ -8,6 +8,24 @@ nature prhysm 譜面難易度予測ネットワーク（NPADP）PyTorch 実装
   1. uv をインストール（winget install astral-sh.uv）
   2. このフォルダで: uv sync
 
+## 学習データの作り方（2026-09-10 から。生成物 data.csv / data_4mode.csv / 学習用songs は git 管理外）
+
+1. 学習用の譜面フォルダを作る:
+     uv run python build_training_songs.py
+   → 学習用songs/official（今の公式 songs/official 437 譜面 + 旧 backup から戻す 7 譜面）と
+     学習用songs/user（旧 backup の user から test と タイムライン・ディスコ を除いた 64 譜面）に
+     .nps だけを写し、labels_override.csv の譜面は #LEVEL をその値に書き換える
+     （それ以外の行はバイト単位で元のまま）。manifest.csv に出どころとラベルを記録する。
+   - 元になる旧フォルダは 学習用songs_2024-10_backup（2024-10 の学習用コピー・消さない）
+   - ラベルの決め方: 公式の #LEVEL が基本。labels_override.csv（song, chart, label）で上書き。
+     カスタム譜面（user）は旧コピーの #LEVEL のまま
+2. レーダー値を測って CSV にする:
+     uv run python make_dataset.py --tool <np_radar_measure.exe>
+   → 計測ツール（本体リポジトリの tools/radar_measure。docs/design-notes/radar-measurement-tool.md）で
+     全譜面を 4 モード計測し、data.csv（24 入力・x1..x24,y）と data_4mode.csv（4 モード入力・
+     列名 sc_/sr_/lc_/lr_ + 軸名）、data_index.csv（行 → 譜面）を書く。計測の作業場所は measure_work/。
+   - ツールは .nps だけで動く（音源・ジャケット不要）。計測 CSV のパスに日本語を入れない
+
 学習:
   uv run python trainer.py
   → data.csv（24特徴量+y）を 6:2:2 に分割して最大 1000 epoch 学習。
