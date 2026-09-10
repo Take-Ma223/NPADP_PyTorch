@@ -120,51 +120,43 @@ def main():
         shutil.rmtree(args.out)
 
     overrides = load_overrides(LABELS)
-    used = set()
-    rows = []
 
-    def add(source, folder, slot, src_path, out_root):
+    def add(source, folder, slot, src_path, out_root, apply_overrides):
+        """1 譜面を写して manifest の行を返す。apply_overrides のときだけ labels_override.csv の値で #LEVEL を書き換える。"""
         lines = read_nps(src_path)
         orig = level_of(lines)
-        key = (folder, slot)
-        new = overrides.get(key) if source.startswith("official") else None
-        if new is not None:
-            used.add(key)
+        new = overrides.get((folder, slot)) if apply_overrides else None
         write_nps(out_root / folder / f"{slot}.nps", lines, new)
-        rows.append({
+        return {
             "source": source, "folder": folder, "slot": slot, "src_path": str(src_path),
             "original_level": orig, "label": new if new is not None else orig,
             "override": 1 if new is not None else 0,
-        })
+        }
 
     # official: 今の公式
-    game_keys = set()
-    for folder, slot, p in list_charts(args.game_official):
-        game_keys.add((folder, slot))
-        add("official", folder, slot, p, args.out / "official")
-    n_game = len(game_keys)
+    rows = [add("official", folder, slot, p, args.out / "official", apply_overrides=True) for folder, slot, p in list_charts(args.game_official)]
+    n_game = len(rows)
 
     # official: 戻す 7 譜面
     for folder, slot in RESTORE_FROM_BACKUP_OFFICIAL:
-        if (folder, slot) in game_keys:
+        if any(r["folder"] == folder and r["slot"] == slot for r in rows):
             sys.exit(f"戻す譜面が今の公式にもある: {folder}/{slot}")
         p = args.backup / "official" / folder / f"{slot}.nps"
         if not p.is_file():
             sys.exit(f"戻す譜面が backup に無い: {p}")
-        add("official(restored)", folder, slot, p, args.out / "official")
+        rows.append(add("official(restored)", folder, slot, p, args.out / "official", apply_overrides=True))
 
     # user: 除外以外
     excluded = set(EXCLUDE_USER)
-    n_user = 0
     for folder, slot, p in list_charts(args.backup / "user"):
         if (folder, slot) in excluded:
             excluded.discard((folder, slot))
             continue
-        add("user", folder, slot, p, args.out / "user")
-        n_user += 1
+        rows.append(add("user", folder, slot, p, args.out / "user", apply_overrides=False))
     if excluded:
         sys.exit(f"除外リストの譜面が backup に無い: {sorted(excluded)}")
 
+    used = {(r["folder"], r["slot"]) for r in rows if r["override"]}
     unused = set(overrides) - used
     if unused:
         sys.exit(f"labels_override.csv の譜面が見つからない: {sorted(unused)}")
@@ -174,6 +166,7 @@ def main():
         w.writeheader()
         w.writerows(rows)
 
+    n_user = sum(r["source"] == "user" for r in rows)
     print(f"official: {n_game} (game) + {len(RESTORE_FROM_BACKUP_OFFICIAL)} (restored) = {n_game + len(RESTORE_FROM_BACKUP_OFFICIAL)}")
     print(f"user: {n_user}")
     print(f"total: {len(rows)}  overrides applied: {len(used)}/{len(overrides)}")
