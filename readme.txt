@@ -64,13 +64,12 @@ nature prhysm 譜面難易度予測ネットワーク（NPADP）PyTorch 実装
      model.pt は C++ 実装 NPADP_pred（libtorch 2.0.0）が読み込む。torch 2.13 の torch.jit.script 出力（平均モデル）を
      libtorch 2.0.0 が読めることは 2026-09-10 / 2026-09-11 に NPADP_pred.exe 単体で確認済み
 
-ゲームへの配置: 書き出した model.pt を本体の programs/application/auto_difficulty_prediction/model/model.pt に置く
-（元はバックアップする）。このフォルダの model.pt は配置中のものと同じにしておく。
-
-モデルの履歴:
-- 2024-10-27 学習（2026-09-10 時点でゲームに配置中）: weight.ckpt（旧 Lightning 形式）= model.pt.bak（TorchScript）
-  = model.pt.2026-07-25.bak（同じ重みを torch 2.13 で書き出し直したもの）
-- 2026-09-10 学習（差し替え候補）: retrain_2026-09-10/model_ensemble.pt（508 譜面全部・3 本平均）= このフォルダの model.pt
+ゲームへの配置と model.pt の規則:
+  このフォルダの model.pt は、ゲームに配置中のもの（本体の programs/application/auto_difficulty_prediction/model/model.pt）と
+  常に同じにしておく。差し替えるときは、書き出したモデルを両方に写し、元の model.pt は model.pt.<日付>.bak として残す。
+  - 今（2026-09-11 から）: retrain_2026-09-10/model_ensemble.pt（508 譜面全部・3 本平均）
+  - 旧: model.pt.bak（2024-10-27 学習・weight.ckpt（旧 Lightning 形式）と同じ重み）、
+        model.pt.2026-07-25.bak（同じ 2024 の重みを torch 2.13 で書き出し直したもの）
 
 ## 既知の将来課題
 

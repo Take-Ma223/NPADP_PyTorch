@@ -7,7 +7,16 @@ __pycache__/
 .idea/
 .vscode/
 
-# 学習の生成物（チェックポイント・ログ）
+# 生成物（build_training_songs.py / make_dataset.py / trainer.py / export_model.py の出力と、学習に使う譜面のコピー）
+data*.csv
+measure_work/
+retrain_*/
+学習用songs/
+学習用songs_*/
+*.pt
+*.ckpt
+
+# 旧 Lightning 時代の出力（フォルダは残してある）
 lightning_logs/
 logs/
 
