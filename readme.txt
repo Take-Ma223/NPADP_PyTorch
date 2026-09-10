@@ -36,6 +36,8 @@ nature prhysm 譜面難易度予測ネットワーク（NPADP）PyTorch 実装
 モデルの中に持つので、ゲーム側はレーダーの生の整数をそのまま送ればよい。
 学習は素の PyTorch ループ（Adam・バッチ 16・最大 3000 エポック・検証 MSE で早期終了 patience 100）。
 乱数の種は固定なので、同じデータ・同じ環境なら再現する。1 回の学習は CPU で 20〜50 秒。
+交差検証の 60 回と 3 本の学習は互いに独立なので、CPU の数だけプロセスで並列に走る（各プロセス 1 スレッド。
+結果は 1 スレッドで順に学習したものと一致する）。
 
 1. 交差検証（手順や入力の良し悪しを比べて採用候補を決める）:
      uv run python trainer.py cv --data data.csv data_4mode.csv --out retrain_YYYY-MM-DD/cv --baseline model.pt.bak

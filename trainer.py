@@ -37,7 +37,9 @@ full（全データ）: 決まった手順で最終版のモデルを作る
 """
 import argparse
 import json
+import os
 import time
+from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
 import numpy as np
@@ -134,9 +136,13 @@ def fit(x_tr, y_tr, x_val, y_val, hp, seed):
 
 
 def run_fits(jobs):
-    """fit の引数の並び jobs を順に学習し、同じ並びで結果を返す。"""
-    for job in jobs:
-        yield fit(*job)
+    """fit の引数の並び jobs を並列に学習し、同じ並びで結果を返す。
+
+    各学習は独立（fit が自分で種を固定する）なのでプロセスで並列にする。各ワーカーは 1 スレッド
+    （スレッド数が変わると浮動小数の足す順が変わり得るので、結果は 1 スレッドの学習として固定する）。
+    """
+    with ProcessPoolExecutor(max_workers=min(len(jobs), os.cpu_count()), initializer=torch.set_num_threads, initargs=(1,)) as ex:
+        yield from ex.map(fit, *zip(*jobs))
 
 
 def load_data(path: Path):
