@@ -37,20 +37,23 @@ nature prhysm 譜面難易度予測ネットワーク（NPADP）PyTorch 実装
 学習は素の PyTorch ループ（Adam・バッチ 16・最大 3000 エポック・検証 MSE で早期終了 patience 100）。
 乱数の種は固定なので、同じデータ・同じ環境なら再現する。1 回の学習は CPU で 20〜50 秒。
 
-1. 交差検証モード（手順や入力の良し悪しを比べて採用候補を決める）:
-     uv run python trainer.py --mode cv --data data.csv data_4mode.csv --out retrain_YYYY-MM-DD --baseline model.pt.bak
+1. 交差検証（手順や入力の良し悪しを比べて採用候補を決める）:
+     uv run python trainer.py cv --data data.csv data_4mode.csv --out retrain_YYYY-MM-DD/cv --baseline model.pt.bak
    → 1. 最終確認用に 2 割を先に取り分ける（ラベルの帯で層化・種固定）
      2. 残り 8 割で 5 分割交差検証（lr {1e-3,3e-4} × weight_decay {0,1e-4,1e-3}）
-     3. データ × 候補 から 1 組を選ぶ（平均 MAE 最小。差が分割ごとの標準偏差以内なら 24 入力 data.csv を採る）
+     3. データ × 候補 から 1 組を選ぶ（平均 MAE 最小。差が分割ごとの標準偏差以内なら、列がゲームの入力（x1..x24）と
+        一致するデータ＝data.csv を採る）
      4. 選んだ組を 8 割で 3 本学習（種 0,1,2）し、最終確認用 2 割で 1 回だけ測る。検証 MAE が中央の 1 本が採用候補
-     出力は --out の下（split.csv / cv_results.csv / cv_summary.csv / final_results.csv / final_seed<N>.pt / summary.md）
-   - --mode cv が既定。--seed（既定 0）で分割と候補選びの種を変えられる
+     出力は --out の下（split.csv / cv_results.csv / cv_summary.csv / chosen.json / final_results.csv / final_seed<N>.pt /
+     baseline.csv / summary.md）。chosen.json（選んだデータと lr / weight_decay）を 2 が読む
+   - --seed（既定 0）で分割と候補選びの種を変えられる。--baseline は data.csv（ゲームの入力）があるときだけ
    - 2026-09-10 の結果: 24 入力・lr 3e-4・weight_decay 1e-4 を採用（4 モード入力は負け）
 
-2. 全データモード（決まった手順で最終版を作る）:
-     uv run python trainer.py --mode full --data data.csv --out retrain_YYYY-MM-DD
-   → 全行で種 0,1,2 の 3 本を学習する（最終確認用の取り分けはしない。lr / weight_decay は --lr / --weight-decay、
-     既定は 1 の結果の 3e-4 / 1e-4）。早期終了のための検証行は種ごとに全体から 1 割を層化で取る
+2. 全データ（決まった手順で最終版を作る）:
+     uv run python trainer.py full --chosen retrain_YYYY-MM-DD/cv/chosen.json --out retrain_YYYY-MM-DD/full
+   → chosen.json のデータと lr / weight_decay で、全行で種 0,1,2 の 3 本を学習する（最終確認用の取り分けはしない）。
+     早期終了のための検証行は種ごとに全体から 1 割を層化で取る。--data / --lr / --weight-decay で chosen.json の値を上書きできる。
+     chosen.json のデータはファイル名なので、1 と同じフォルダ（このフォルダ）で実行する
      出力は --out の下（full_split.csv / full_results.csv / full_seed<N>.pt / full_summary.md）
 
 3. C++ 用モデル出力（TorchScript）:
