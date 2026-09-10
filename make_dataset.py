@@ -1,7 +1,7 @@
 """`学習用songs` の全譜面をレーダー計測ツールで 4 モード計測し、学習データを作る。
 
 出力（このフォルダ直下・git 管理外）:
-  data.csv         24 入力 + y。列名 x1..x24,y。並びはゲームの AutoDifficultyPrediction.h が送る順
+  data.csv         ゲームの入力 24 個 + y。列名 x1..x24（GAME_INPUT_COLS）。並びはゲームの AutoDifficultyPrediction.h が送る順
                    （STANDARD×COLORFUL の global,local,chain,unstability,streak,color → colorNotes[0..8] → localNotes[0..8]）
   data_4mode.csv   4 モード入力 + y。列名は <モード>_<軸|color_notes_i|local_notes_i>。
                    モード接頭辞: sc=standard-colorful, sr=standard-rainbow, lc=light-colorful, lr=light-rainbow。
@@ -9,7 +9,7 @@
   data_index.csv   行 → 譜面（source, folder, slot, label）。data.csv / data_4mode.csv と同じ行順
   measure_work/    計測ツールに渡す作業フォルダと計測 CSV（radar_official.csv / radar_user.csv）
 
-y は各コピーの `#LEVEL`（build_training_songs.py が書いたラベル）。
+y は `学習用songs/manifest.csv` の label 列（build_training_songs.py が決めたラベル）。各コピーの `#LEVEL` と突き合わせ、食い違えば止める。
 
 使い方:
   uv run python make_dataset.py --tool <np_radar_measure.exe のパス>
@@ -24,10 +24,12 @@ from pathlib import Path
 
 import pandas as pd
 
+from build_training_songs import DEFAULT_GAME_OFFICIAL, DEFAULT_OUT, level_of, list_charts, read_nps
+
 HERE = Path(__file__).resolve().parent
-DEFAULT_SONGS = HERE / "学習用songs"
+DEFAULT_SONGS = DEFAULT_OUT
 DEFAULT_WORK = HERE / "measure_work"
-DEFAULT_GAME_ROOT = Path(r"F:\nature_prhysm\game\nature_prhysm")
+DEFAULT_GAME_ROOT = DEFAULT_GAME_OFFICIAL.parent.parent
 DEFAULT_TOOL = Path(r"F:\nature_prhysm\game\nature_prhysm_wt_n5\tools\radar_measure\bin\Release\np_radar_measure.exe")
 
 MODES = [("sc", "standard-colorful"), ("sr", "standard-rainbow"), ("lc", "light-colorful"), ("lr", "light-rainbow")]
@@ -35,29 +37,36 @@ AXES = ["global", "local", "chain", "unstability", "streak", "rhythm", "color"]
 COLOR_NOTES = [f"color_notes_{i}" for i in range(9)]
 LOCAL_NOTES = [f"local_notes_{i}" for i in range(9)]
 
-# data.csv の x1..x24 に対応するツール CSV の列（standard-colorful 行）
+# ゲームが送る入力に対応するツール CSV の列（standard-colorful 行）と、data.csv での列名
 X24_TOOL_COLS = ["disp_global", "disp_local", "disp_chain", "disp_unstability", "disp_streak", "disp_color"] + COLOR_NOTES + LOCAL_NOTES
+GAME_INPUT_COLS = [f"x{i + 1}" for i in range(len(X24_TOOL_COLS))]
 
 
-def level_of(path: Path):
-    text = path.read_bytes()[2:].decode("utf-16-le")
-    for line in text.splitlines():
-        if line.startswith("#LEVEL:"):
-            return int(line[len("#LEVEL:"):].strip())
-    return None
+def load_labels(songs: Path):
+    """manifest.csv のラベルを {(source フォルダ, 曲, slot): label} で返す。各コピーの #LEVEL と突き合わせ、食い違えば止める。"""
+    labels = {}
+    with (songs / "manifest.csv").open(encoding="utf-8-sig", newline="") as f:
+        for row in csv.DictReader(f):
+            source = "user" if row["source"] == "user" else "official"
+            labels[(source, row["folder"], int(row["slot"]))] = int(row["label"])
+    charts = [(source, folder, slot, p) for source in ("official", "user") for folder, slot, p in list_charts(songs / source)]
+    if len(charts) != len(labels) or any((s, f, sl) not in labels for s, f, sl, _ in charts):
+        sys.exit(f"manifest.csv（{len(labels)} 行）と .nps（{len(charts)} 個）が対応しない")
+    for source, folder, slot, p in charts:
+        level = level_of(read_nps(p))
+        if level != labels[(source, folder, slot)]:
+            sys.exit(f"manifest.csv のラベル {labels[(source, folder, slot)]} と #LEVEL {level} が違う: {p}")
+    return labels
 
 
 def prepare_root(src: Path, root: Path, game_root: Path):
     """root/songs/official/<曲>/<slot>.nps へ .nps を写し、catalog / locales をゲームから写す（読み取りのみ）。"""
     if root.exists():
         shutil.rmtree(root)
-    for folder in sorted(p for p in src.iterdir() if p.is_dir()):
-        for slot in range(1, 5):
-            p = folder / f"{slot}.nps"
-            if p.is_file():
-                dst = root / "songs" / "official" / folder.name / f"{slot}.nps"
-                dst.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copyfile(p, dst)
+    for folder, slot, p in list_charts(src):
+        dst = root / "songs" / "official" / folder / f"{slot}.nps"
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(p, dst)
     for name in ("catalog", "locales"):
         if (game_root / name).is_dir():
             shutil.copytree(game_root / name, root / name)
@@ -72,11 +81,11 @@ def measure(tool: Path, root: Path, out_csv: Path):
         sys.exit("計測ツールが失敗した")
 
 
-def load_measured(csv_path: Path, source: str, songs_root: Path):
+def load_measured(csv_path: Path, source: str, labels):
     df = pd.read_csv(csv_path)
     df["slot"] = df["slot"].astype(int)
     df["source"] = source
-    df["label"] = [level_of(songs_root / f / f"{s}.nps") for f, s in zip(df["folder"], df["slot"])]
+    df["label"] = [labels[(source, f, s)] for f, s in zip(df["folder"], df["slot"])]
     return df
 
 
@@ -89,6 +98,7 @@ def main():
     ap.add_argument("--skip-measure", action="store_true", help="measure_work の計測 CSV をそのまま使う")
     args = ap.parse_args()
 
+    labels = load_labels(args.songs)
     args.work.mkdir(parents=True, exist_ok=True)
     frames = []
     for source in ("official", "user"):
@@ -99,7 +109,7 @@ def main():
                 sys.exit(f"計測ツールが無い: {args.tool}")
             prepare_root(args.songs / source, root, args.game_root)
             measure(args.tool, root, out_csv)
-        frames.append(load_measured(out_csv, source, args.songs / source))
+        frames.append(load_measured(out_csv, source, labels))
     m = pd.concat(frames, ignore_index=True)
 
     # 1 譜面 = 4 行（4 モード）になっているか
@@ -107,9 +117,8 @@ def main():
     if (per_chart != 4).any():
         sys.exit(f"4 モード揃っていない譜面がある: {per_chart[per_chart != 4]}")
     n_charts = len(per_chart)
-    n_nps = sum(1 for s in ("official", "user") for _ in (args.songs / s).glob("*/*.nps"))
-    if n_charts != n_nps:
-        sys.exit(f"計測した譜面数 {n_charts} と .nps の数 {n_nps} が違う")
+    if n_charts != len(labels):
+        sys.exit(f"計測した譜面数 {n_charts} と .nps の数 {len(labels)} が違う")
 
     key = ["source", "folder", "slot"]
     sc = m[m["mode"] == "standard-colorful"].sort_values(key).reset_index(drop=True)
@@ -118,7 +127,7 @@ def main():
     index["chart_path"] = [f"学習用songs/{s}/{f}/{sl}.nps" for s, f, sl in zip(index["source"], index["folder"], index["slot"])]
 
     # data.csv
-    d24 = pd.DataFrame({f"x{i + 1}": sc[c].astype(int).values for i, c in enumerate(X24_TOOL_COLS)})
+    d24 = pd.DataFrame({name: sc[c].astype(int).values for name, c in zip(GAME_INPUT_COLS, X24_TOOL_COLS)})
     d24["y"] = sc["label"].astype(int).values
     d24.to_csv(HERE / "data.csv", index=False, lineterminator="\n")
 

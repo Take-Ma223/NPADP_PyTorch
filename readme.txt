@@ -22,9 +22,12 @@ nature prhysm 譜面難易度予測ネットワーク（NPADP）PyTorch 実装
      カスタム譜面（user）は旧コピーの #LEVEL のまま
 2. レーダー値を測って CSV にする:
      uv run python make_dataset.py --tool <np_radar_measure.exe>
-   → 計測ツール（本体リポジトリの tools/radar_measure。docs/design-notes/radar-measurement-tool.md）で
-     全譜面を 4 モード計測し、data.csv（24 入力・x1..x24,y）と data_4mode.csv（4 モード入力・
+   → 計測ツールで全譜面を 4 モード計測し、data.csv（ゲームの入力 24 個・x1..x24,y）と data_4mode.csv（4 モード入力・
      列名 sc_/sr_/lc_/lr_ + 軸名）、data_index.csv（行 → 譜面）を書く。計測の作業場所は measure_work/。
+     y は 学習用songs/manifest.csv の label 列（各 .nps の #LEVEL と突き合わせ、食い違えば止まる）
+   - 計測ツールは本体リポジトリを cmake --build <build dir> --target np_radar_measure してできる exe
+     （tools/radar_measure。docs/design-notes/radar-measurement-tool.md）を --tool で渡す。
+     既定値（make_dataset.py の DEFAULT_TOOL）は一時的な worktree nature_prhysm_wt_n5 のビルドを指している
    - ツールは .nps だけで動く（音源・ジャケット不要）。計測 CSV のパスに日本語を入れない
 
 ## 学習（2026-09-10 に手順を改めた。旧手順は git 履歴の trainer.py / model.py）
