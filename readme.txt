@@ -57,12 +57,12 @@ nature prhysm 譜面難易度予測ネットワーク（NPADP）PyTorch 実装
      出力は --out の下（full_split.csv / full_results.csv / full_seed<N>.pt / full_summary.md）
 
 3. C++ 用モデル出力（TorchScript）:
-     uv run python pred.py --weights retrain_YYYY-MM-DD/full_seed0.pt retrain_YYYY-MM-DD/full_seed1.pt retrain_YYYY-MM-DD/full_seed2.pt \
-         --out retrain_YYYY-MM-DD/model_ensemble.pt --data data.csv
-   → --weights が複数なら 3 本の出力を平均する平均モデル（model.py の Ensemble）、1 つならその単体を書き出す。
+     uv run python export_model.py --weights retrain_YYYY-MM-DD/full/full_seed0.pt retrain_YYYY-MM-DD/full/full_seed1.pt \
+         retrain_YYYY-MM-DD/full/full_seed2.pt --out retrain_YYYY-MM-DD/full/model_ensemble.pt --data data.csv
+   → --weights の重み（1 つでも複数でも）の出力を平均する平均モデル（model.py の Ensemble）を書き出す（書き出しの形は常に 1 つ）。
      書き出し前後で出力が一致することを確かめる。
-     model.pt は C++ 実装 NPADP_pred（libtorch 2.0.0）が読み込む。torch 2.13 の torch.jit.script 出力
-     （単体・平均モデルとも）を libtorch 2.0.0 が読めることは 2026-09-10 に NPADP_pred.exe 単体で確認済み
+     model.pt は C++ 実装 NPADP_pred（libtorch 2.0.0）が読み込む。torch 2.13 の torch.jit.script 出力（平均モデル）を
+     libtorch 2.0.0 が読めることは 2026-09-10 / 2026-09-11 に NPADP_pred.exe 単体で確認済み
 
 ゲームへの配置: 書き出した model.pt を本体の programs/application/auto_difficulty_prediction/model/model.pt に置く
 （元はバックアップする）。このフォルダの model.pt は配置中のものと同じにしておく。

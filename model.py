@@ -11,14 +11,14 @@ class Net(nn.Module):
     TorchScript にも一緒に書き出される。
     """
 
-    def __init__(self, input_size=24, hidden1_size=20, hidden2_size=16, hidden3_size=8, output_size=1):
+    def __init__(self, input_size=24):
         super().__init__()
         self.register_buffer("in_mean", torch.zeros(input_size))
         self.register_buffer("in_std", torch.ones(input_size))
-        self.fc1 = nn.Linear(input_size, hidden1_size)
-        self.fc2 = nn.Linear(hidden1_size, hidden2_size)
-        self.fc3 = nn.Linear(hidden2_size, hidden3_size)
-        self.fc4 = nn.Linear(hidden3_size, output_size)
+        self.fc1 = nn.Linear(input_size, 20)
+        self.fc2 = nn.Linear(20, 16)
+        self.fc3 = nn.Linear(16, 8)
+        self.fc4 = nn.Linear(8, 1)
 
     @property
     def input_size(self) -> int:
